@@ -1,3 +1,4 @@
+# Secret configurations for JWT, SMTP, dashboard, database, and analytics
 secret:
   jwt:
     anonKey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE
@@ -16,6 +17,7 @@ secret:
   analytics:
     apiKey: mY9qW3kP7tL2rZ6vX1jF5hN8bR4tQ9zK
 
+# Database (PostgreSQL) configuration
 db:
   enabled: true
   image:
@@ -28,8 +30,21 @@ db:
         - postgres
     initialDelaySeconds: 3
   persistence:
-    enabled: false
+    enabled: true
+    size: 10Gi
+  service:
+    ports:
+      postgresql: 5432
+  containerPorts:
+    postgresql: 5432
+  primary:
+    service:
+      ports:
+        postgresql: 5432
+    containerPorts:
+      postgresql: 5432
 
+# Studio configuration
 studio:
   image:
     tag: 20240326-5e5586d
@@ -44,6 +59,7 @@ studio:
       port: 3000
     initialDelaySeconds: 3
 
+# Auth configuration
 auth:
   image:
     tag: v2.143.0
@@ -56,11 +72,16 @@ auth:
     GOTRUE_SMTP_HOST: "smtp.example.com"
     GOTRUE_SMTP_PORT: "587"
     GOTRUE_SMTP_SENDER_NAME: "your-mail@example.com"
+    DB_USER: newuser  # Override to match the secret username
 
+# REST API configuration
 rest:
   image:
     tag: v12.0.1
+  environment:
+    PGRST_DB_USER: newuser  # Override to match the secret username
 
+# Realtime configuration
 realtime:
   image:
     tag: v2.27.5
@@ -69,11 +90,15 @@ realtime:
       path: /
       port: 4000
     initialDelaySeconds: 3
+  environment:
+    DB_USER: newuser  # Override to match the secret username
 
+# Meta configuration
 meta:
   image:
     tag: v0.80.0
 
+# Storage configuration
 storage:
   image:
     tag: v0.46.4
@@ -84,7 +109,10 @@ storage:
     initialDelaySeconds: 3
   persistence:
     enabled: false
+  environment:
+    DB_USER: newuser  # Override to match the secret username
 
+# Imgproxy configuration
 imgproxy:
   image:
     tag: v3.8.0
@@ -99,6 +127,7 @@ imgproxy:
   persistence:
     enabled: false
 
+# Kong configuration
 kong:
   image:
     repository: kong
@@ -111,7 +140,7 @@ kong:
     className: "nginx"
     annotations:
       nginx.ingress.kubernetes.io/rewrite-target: /
-      cert-manager.io/cluster-issuer: "letsencrypt-prod" 
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
     tls:
       - secretName: supabase-tls
         hosts:
@@ -123,6 +152,7 @@ kong:
           - path: /
             pathType: Prefix
 
+# Analytics configuration
 analytics:
   image:
     tag: 1.4.0
@@ -131,7 +161,10 @@ analytics:
       path: /health
       port: 4000
     initialDelaySeconds: 3
+  environment:
+    DB_USERNAME: newuser  # Override to match the secret username
 
+# Vector configuration
 vector:
   image:
     tag: 0.34.0-alpine
@@ -148,6 +181,7 @@ vector:
       hostPath:
         path: /var/log/pods
 
+# Functions configuration
 functions:
   image:
     tag: v1.41.2
