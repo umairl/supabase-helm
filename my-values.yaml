@@ -1,34 +1,62 @@
-# Secret configurations for JWT, SMTP, dashboard, database, and analytics
+# ======================
+# SECRET CONFIGURATIONS
+# ======================
 secret:
   jwt:
     anonKey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE
     serviceKey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q
     secret: kX7mP9qW3tL2rZ6vY1jF5hN8bR4tK9zQ
   smtp:
-    username: your-mail@example.com
-    password: example123456
+    username: your-mail@example.com  # <<< MUST REPLACE WITH REAL SMTP
+    password: example123456         # <<< MUST REPLACE WITH REAL SMTP
   dashboard:
     username: newuser
     password: tool4098
   db:
-    username: newuser
+    username: postgres
     password: db54321base
     database: postgres
+    password_encoded: db54321base
   analytics:
     apiKey: mY9qW3kP7tL2rZ6vX1jF5hN8bR4tQ9zK
 
-# Database (PostgreSQL) configuration
+# ======================
+# DATABASE (PostgreSQL)
+# ======================
 db:
   enabled: true
   image:
     tag: 15.1.0.147
+  postgresql:
+    initdbScripts:
+      create-schemas.sql: |
+        CREATE SCHEMA IF NOT EXISTS auth;
+        CREATE SCHEMA IF NOT EXISTS storage;
+        CREATE SCHEMA IF NOT EXISTS _analytics;
+        CREATE SCHEMA IF NOT EXISTS _realtime;
+        CREATE SCHEMA IF NOT EXISTS graphql_public;
+        CREATE SCHEMA IF NOT EXISTS extensions;
+      create-roles.sql: |
+        CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'db54321base';
+        CREATE ROLE anon;
+        CREATE ROLE service_role;
+        GRANT anon TO authenticator;
+        GRANT service_role TO authenticator;
+        GRANT ALL PRIVILEGES ON SCHEMA auth TO authenticator;
+        GRANT ALL PRIVILEGES ON SCHEMA storage TO authenticator;
+        GRANT ALL PRIVILEGES ON SCHEMA _analytics TO authenticator;
+        GRANT ALL PRIVILEGES ON SCHEMA _realtime TO authenticator;
+        GRANT ALL PRIVILEGES ON SCHEMA graphql_public TO authenticator;
+        GRANT ALL PRIVILEGES ON SCHEMA public TO authenticator;
+        GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO authenticator;
+        GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO authenticator;
   livenessProbe:
     exec:
       command:
         - pg_isready
         - -U
         - postgres
-    initialDelaySeconds: 3
+    initialDelaySeconds: 30
   persistence:
     enabled: true
     size: 10Gi
@@ -44,7 +72,9 @@ db:
     containerPorts:
       postgresql: 5432
 
-# Studio configuration
+# ======================
+# STUDIO CONFIGURATION
+# ======================
 studio:
   image:
     tag: 20240326-5e5586d
@@ -57,9 +87,11 @@ studio:
     httpGet:
       path: /api/profile
       port: 3000
-    initialDelaySeconds: 3
+    initialDelaySeconds: 30
 
-# Auth configuration
+# ======================
+# AUTH CONFIGURATION (CRITICAL FIXES)
+# ======================
 auth:
   image:
     tag: v2.143.0
@@ -68,20 +100,36 @@ auth:
     GOTRUE_SITE_URL: https://supabasetool.edgeinfra.site
     GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
     GOTRUE_MAILER_AUTOCONFIRM: "true"
-    GOTRUE_SMTP_ADMIN_EMAIL: "your-mail@example.com"
-    GOTRUE_SMTP_HOST: "smtp.example.com"
+    GOTRUE_SMTP_ADMIN_EMAIL: "your-mail@example.com"  # <<< MUST UPDATE
+    GOTRUE_SMTP_HOST: "smtp.example.com"            # <<< MUST UPDATE
     GOTRUE_SMTP_PORT: "587"
     GOTRUE_SMTP_SENDER_NAME: "your-mail@example.com"
-    DB_USER: newuser  # Override to match the secret username
+    DB_USER: postgres
+    GOTRUE_DB_SCHEMA: "auth"
+    # CRITICAL FIX: Added search_path and sslmode
+    GOTRUE_DB_DATABASE_URL: "postgres://postgres:$(DB_PASSWORD_ENC)@supabase-supabase-db:5432/postgres?search_path=auth&sslmode=disable"
+    # CRITICAL FIX: Explicit SMTP credentials from secret
+    GOTRUE_SMTP_USER: $(GOTRUE_SMTP_USER)
+    GOTRUE_SMTP_PASS: $(GOTRUE_SMTP_PASS)
 
-# REST API configuration
+# ======================
+# REST API CONFIGURATION
+# ======================
 rest:
   image:
     tag: v12.0.1
   environment:
-    PGRST_DB_USER: newuser  # Override to match the secret username
+    PGRST_DB_USER: authenticator
+    PGRST_DB_ANON_ROLE: anon
+    PGRST_DB_SCHEMAS: "public,storage,graphql_public"
+    PGRST_JWT_SECRET: $(PGRST_JWT_SECRET)
+    DB_PASSWORD: db54321base
+    DB_PASSWORD_ENC: db54321base
+    PGRST_DB_URI: "postgres://authenticator:$(DB_PASSWORD)@supabase-supabase-db:5432/postgres"
 
-# Realtime configuration
+# ======================
+# REALTIME CONFIGURATION
+# ======================
 realtime:
   image:
     tag: v2.27.5
@@ -89,16 +137,32 @@ realtime:
     httpGet:
       path: /
       port: 4000
-    initialDelaySeconds: 3
+    initialDelaySeconds: 30
   environment:
-    DB_USER: newuser  # Override to match the secret username
+    DB_USER: postgres
+    DB_AFTER_CONNECT_QUERY: "SET search_path TO _realtime"
+    DB_NAME: postgres
+    DB_HOST: supabase-supabase-db
+    DB_PORT: 5432
+    DB_PASSWORD: $(DB_PASSWORD)
+    DB_SSL: disable
+    SECRET_KEY_BASE: UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq
 
-# Meta configuration
+# ======================
+# META CONFIGURATION
+# ======================
 meta:
   image:
     tag: v0.80.0
+  environment:
+    DB_USER: postgres
+    DB_HOST: supabase-supabase-db
+    DB_PORT: 5432
+    DB_PASSWORD: $(DB_PASSWORD)
 
-# Storage configuration
+# ======================
+# STORAGE CONFIGURATION
+# ======================
 storage:
   image:
     tag: v0.46.4
@@ -106,13 +170,19 @@ storage:
     httpGet:
       path: /status
       port: 5000
-    initialDelaySeconds: 3
+    initialDelaySeconds: 30
   persistence:
     enabled: false
   environment:
-    DB_USER: newuser  # Override to match the secret username
+    DB_USER: postgres
+    DB_HOST: supabase-supabase-db
+    DB_PORT: 5432
+    DB_PASSWORD: $(DB_PASSWORD)
+    DB_SCHEMA: storage
 
-# Imgproxy configuration
+# ======================
+# IMGPROXY CONFIGURATION
+# ======================
 imgproxy:
   image:
     tag: v3.8.0
@@ -123,11 +193,13 @@ imgproxy:
       command:
         - imgproxy
         - health
-    initialDelaySeconds: 3
+    initialDelaySeconds: 30
   persistence:
     enabled: false
 
-# Kong configuration
+# ======================
+# KONG CONFIGURATION
+# ======================
 kong:
   image:
     repository: kong
@@ -152,7 +224,9 @@ kong:
           - path: /
             pathType: Prefix
 
-# Analytics configuration
+# ======================
+# ANALYTICS CONFIGURATION (CRITICAL FIXES)
+# ======================
 analytics:
   image:
     tag: 1.4.0
@@ -160,11 +234,26 @@ analytics:
     httpGet:
       path: /health
       port: 4000
-    initialDelaySeconds: 3
+    initialDelaySeconds: 60  # Increased for initialization
   environment:
-    DB_USERNAME: newuser  # Override to match the secret username
+    DB_USERNAME: postgres
+    DB_HOSTNAME: supabase-supabase-db
+    DB_PORT: 5432
+    DB_PASSWORD: $(DB_PASSWORD)
+    DB_SCHEMA: _analytics
+    DB_DATABASE: postgres
+    LOGFLARE_SUPABASE_MODE: "true"
+    LOGFLARE_SINGLE_TENANT: "true"
+    FEATURE_FLAG_OVERRIDE: "multibackend=true"
+    # CRITICAL FIX: Force single node operation
+    LOGFLARE_CLUSTER_SIZE: "1"
+    LOGFLARE_NODE_HOST: "127.0.0.1"
+    # CRITICAL FIX: Explicit connection URL
+    POSTGRES_BACKEND_URL: "postgresql://postgres:$(DB_PASSWORD)@supabase-supabase-db:5432/postgres?search_path=_analytics"
 
-# Vector configuration
+# ======================
+# VECTOR CONFIGURATION
+# ======================
 vector:
   image:
     tag: 0.34.0-alpine
@@ -172,7 +261,7 @@ vector:
     httpGet:
       path: /health
       port: 9001
-    initialDelaySeconds: 3
+    initialDelaySeconds: 30
   volumeMounts:
     - name: pod-logs
       mountPath: /var/log/pods
@@ -181,7 +270,14 @@ vector:
       hostPath:
         path: /var/log/pods
 
-# Functions configuration
+# ======================
+# FUNCTIONS CONFIGURATION
+# ======================
 functions:
   image:
     tag: v1.41.2
+  environment:
+    DB_USER: postgres
+    DB_HOST: supabase-supabase-db
+    DB_PORT: 5432
+    DB_PASSWORD: $(DB_PASSWORD)
